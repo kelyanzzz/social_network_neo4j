@@ -74,6 +74,18 @@ class Database:
         """
         records, summary, keys = self.driver.execute_query(query, user_id=user_id)
         return [dict(record) for record in records]
+    def get_feed(self, user_id: int) -> List[dict]:
+        query = """
+        MATCH (u:User {id: $user_id})-[:FOLLOWS]->(followee:User)-[:POSTED]->(p:Post)
+        RETURN p.id AS id, p.content AS content, p.timestamp AS timestamp, 
+               followee.username AS username, followee.name AS name
+        ORDER BY p.timestamp DESC
+        """
+        records, summary, keys = self.driver.execute_query(query, user_id=user_id)
+        return [dict(record) for record in records]
+
+
+
     
     # Follow operations
     def follow_user(self, follower_id: int, followee_id: int) -> bool:
