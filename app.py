@@ -24,26 +24,29 @@ class Database:
 
     def close(self):
         self.driver.close()
-    
+        
     # User operations
     def create_user(self, username: str, name: str) -> int:
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('INSERT INTO users (username, name) VALUES (?, ?)', (username, name))
-            return cursor.lastrowid
-    
+        query = """
+        OPTIONAL MATCH (u:User)
+        WITH COALESCE(MAX(u.id), 0) + 1 AS new_id
+        CREATE (new_user:User {id: new_id, username: $username, name: $name})
+        RETURN new_user.id AS id
+        """
+        records, summary, keys = self.driver.execute_query(query, username=username, name=name)
+        return records[0]["id"]
+
     def get_user(self, user_id: int) -> Optional[dict]:
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('SELECT id, username, name FROM users WHERE id = ?', (user_id,))
-            row = cursor.fetchone()
-            return {'id': row[0], 'username': row[1], 'name': row[2]} if row else None
-    
+        query = "MATCH (u:User {id: $user_id}) RETURN u.id AS id, u.username AS username, u.name AS name"
+        records, summary, keys = self.driver.execute_query(query, user_id=user_id)
+        if records:
+            return dict(records[0])
+        return None
+
     def get_all_users(self) -> List[dict]:
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('SELECT id, username, name FROM users')
-            return [{'id': row[0], 'username': row[1], 'name': row[2]} for row in cursor.fetchall()]
+        query = "MATCH (u:User) RETURN u.id AS id, u.username AS username, u.name AS name ORDER BY u.id"
+        records, summary, keys = self.driver.execute_query(query)
+        return [dict(record) for record in records]
     
     # Post operations
     def create_post(self, user_id: int, content: str) -> int:
