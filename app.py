@@ -24,7 +24,7 @@ class Database:
 
     def close(self):
         self.driver.close()
-        
+
     # User operations
     def create_user(self, username: str, name: str) -> int:
         query = """
@@ -49,47 +49,31 @@ class Database:
         return [dict(record) for record in records]
     
     # Post operations
+    # Post operations
     def create_post(self, user_id: int, content: str) -> int:
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('INSERT INTO posts (user_id, content) VALUES (?, ?)', (user_id, content))
-            return cursor.lastrowid
-    
+        query = """
+        MATCH (u:User {id: $user_id})
+        OPTIONAL MATCH (all_posts:Post)
+        WITH u, COALESCE(MAX(all_posts.id), 0) + 1 AS new_post_id
+        CREATE (p:Post {
+            id: new_post_id, 
+            content: $content, 
+            timestamp: toString(localdatetime())
+        })
+        CREATE (u)-[:POSTED]->(p)
+        RETURN p.id AS id
+        """
+        records, summary, keys = self.driver.execute_query(query, user_id=user_id, content=content)
+        return records[0]["id"]
+
     def get_posts_by_user(self, user_id: int) -> List[dict]:
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT p.id, p.content, p.timestamp, u.username, u.name 
-                FROM posts p JOIN users u ON p.user_id = u.id 
-                WHERE p.user_id = ?
-                ORDER BY p.timestamp DESC
-            ''', (user_id,))
-            return [{
-                'id': row[0],
-                'content': row[1],
-                'timestamp': row[2],
-                'username': row[3],
-                'name': row[4]
-            } for row in cursor.fetchall()]
-    
-    def get_feed(self, user_id: int) -> List[dict]:
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT p.id, p.content, p.timestamp, u.username, u.name 
-                FROM posts p 
-                JOIN users u ON p.user_id = u.id
-                JOIN followers f ON p.user_id = f.followee_id
-                WHERE f.follower_id = ?
-                ORDER BY p.timestamp DESC
-            ''', (user_id,))
-            return [{
-                'id': row[0],
-                'content': row[1],
-                'timestamp': row[2],
-                'username': row[3],
-                'name': row[4]
-            } for row in cursor.fetchall()]
+        query = """
+        MATCH (u:User {id: $user_id})-[:POSTED]->(p:Post)
+        RETURN p.id AS id, p.content AS content, p.timestamp AS timestamp, u.username AS username, u.name AS name
+        ORDER BY p.timestamp DESC
+        """
+        records, summary, keys = self.driver.execute_query(query, user_id=user_id)
+        return [dict(record) for record in records]
     
     # Follow operations
     def follow_user(self, follower_id: int, followee_id: int) -> bool:
